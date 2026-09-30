@@ -14,21 +14,26 @@ method = runpy.run_path(str(HERE.parent / "client_compat/run.py"))["method"]
 def main():
     source = (ROOT / "src/server/coa/AscensionTravelPermit.cpp").read_text(encoding="utf-8")
     shared = (ROOT / "src/server/shared/SharedDefines.h").read_text(encoding="utf-8")
-    code = "#include <array>\n#include <cassert>\n#include <cstdint>\n#include <vector>\n"
+    code = "#include <array>\n#include <cassert>\n#include <cstdint>\n#include <optional>\n#include <set>\n#include <vector>\n"
     code += "using uint8=std::uint8_t;using uint32=std::uint32_t;\n"
     for enum in ("TeamId", "Races", "SpellCastResult"):
         code += method(shared, "enum " + enum) + ";\n"
     code += r'''
 constexpr uint32 GOSSIP_ICON_TAXI=1, DEFAULT_GOSSIP_MESSAGE=1;
+struct WorldLocation{uint32 mapId;float x,y,z,o;WorldLocation(uint32 m,float px,float py,float pz,float po):mapId(m),x(px),y(py),z(pz),o(po){}
+    uint32 GetMapId()const{return mapId;}float GetPositionX()const{return x;}float GetPositionY()const{return y;}float GetPositionZ()const{return z;}};
 struct Item {uint32 id=977028;uint32 GetEntry()const{return id;}uint32 GetGUID()const{return 42;}};
 struct Player
 {
     uint32 level=1;TeamId team=TEAM_ALLIANCE;bool alive=true,combat=false;
-    std::vector<uint32> menu;uint32 shown=0,closed=0,teleports=0,destination=0;
+    std::vector<uint32> menu;uint32 shown=0,closed=0,teleports=0,destination=0;float destX=0;
     Player* ToPlayer(){return this;}uint32 GetLevel()const{return level;}uint32 getClass()const{return 29;}
     bool IsAlive()const{return alive;}bool IsInCombat()const{return combat;}TeamId GetTeamId()const{return team;}
-    void TeleportTo(uint32 map,float,float,float,float){++teleports;destination=map;}
+    void TeleportTo(uint32 map,float x,float,float,float){++teleports;destination=map;destX=x;}
+    void TeleportTo(WorldLocation const& l){++teleports;destination=l.mapId;destX=l.x;}
 };
+std::set<uint32> lockedMaps;
+bool AscensionAreaAccessAllowsPosition(Player const*,uint32 map,float,float,float){return !lockedMaps.count(map);}
 struct PlayerInfo{uint32 mapId;float positionX=1,positionY=2,positionZ=3,orientation=4;};
 struct Manager
 {
@@ -64,9 +69,22 @@ int main()
         assert(starter);  // The Draenei and Blood Elf starts are offered, not just the six vanilla ones.
         for (uint32 action:actions)
         {
+            Destination const& d=Destinations[action];
+            bool own=d.race==RACE_DRAENEI||d.race==RACE_BLOODELF;
             auto before=p.teleports;select.OnGossipSelect(&p,&item,SenderTravelPermit,action);
-            assert(p.teleports==before+1 && p.destination==Destinations[action].race && p.menu.empty());
+            assert(p.teleports==before+1 && p.destination==(own?530u:d.race) && p.menu.empty());
+            if (own) assert(p.destX==(d.race==RACE_DRAENEI?-3961.64f:10349.6f));
         }
+        lockedMaps={530};spell.OpenMenu();
+        assert(p.menu.size()==3);
+        for (uint32 action:p.menu)
+            assert(Destinations[action].race!=RACE_DRAENEI && Destinations[action].race!=RACE_BLOODELF);
+        auto lockedBefore=p.teleports;
+        for (uint32 action:actions)
+            if (Destinations[action].race==RACE_DRAENEI||Destinations[action].race==RACE_BLOODELF)
+                select.OnGossipSelect(&p,&item,SenderTravelPermit,action);
+        assert(p.teleports==lockedBefore);
+        lockedMaps.clear();
         auto before=p.teleports;
         select.OnGossipSelect(&p,&item,SenderTravelPermit,team==TEAM_ALLIANCE?4:0);
         select.OnGossipSelect(&p,&item,SenderTravelPermit,99);
@@ -105,7 +123,7 @@ int main()
     assert db.execute("SELECT * FROM item_template ORDER BY entry").fetchall() == [
         (1,"keep"),(977028,"item_ascension_travel_permit")]
     assert db.execute("SELECT COUNT(*) FROM spell_script_names").fetchone() == (2,)
-    print("PASS: faction destinations, level/combat/death gates, stale selections, missing starts and SQL bindings")
+    print("PASS: faction destinations, locked destinations hidden, level/combat/death gates, stale selections, missing starts and SQL bindings")
 
 
 if __name__ == "__main__":
