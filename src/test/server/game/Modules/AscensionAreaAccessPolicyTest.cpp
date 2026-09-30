@@ -464,4 +464,3 @@ TEST(AscensionAreaAccessPolicyTest, NorthrendDungeonsKeyOpensTheWrathNaxxramasCl
     Policy const policy = Make({{"Coa.Access.Northrend.Dungeons", true}});
     EXPECT_TRUE(policy.IsAllowed(false, 535, 3458));
 }
-
