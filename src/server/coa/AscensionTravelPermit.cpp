@@ -8,7 +8,6 @@
 #include "ScriptedGossip.h"
 #include "SpellScript.h"
 #include <array>
-#include <optional>
 
 namespace
 {
@@ -16,7 +15,10 @@ enum TravelPermit : uint32
 {
     ItemTravelPermit = 977028,
     SenderTravelPermit = 977028,
-    MaxTravelLevel = 8
+    MaxTravelLevel = 8,
+    OutlandMap = 530,
+    AmmenValeZone = 10142,
+    SunstriderIsleZone = 10141
 };
 
 struct Destination
@@ -24,20 +26,25 @@ struct Destination
     char const* name;
     TeamId team;
     uint8 race;
-    std::optional<WorldLocation> location;
+    uint32 zone;
 };
 
-std::array<Destination, 8> const Destinations =
+constexpr std::array<Destination, 8> Destinations =
 {{
-    {"Elwynn Forest", TEAM_ALLIANCE, RACE_HUMAN, std::nullopt},
-    {"Dun Morogh", TEAM_ALLIANCE, RACE_DWARF, std::nullopt},
-    {"Teldrassil", TEAM_ALLIANCE, RACE_NIGHTELF, std::nullopt},
-    {"Ammen Vale", TEAM_ALLIANCE, RACE_DRAENEI, WorldLocation(530, -3961.64f, -13931.2f, 100.615f, 2.08364f)},
-    {"Tirisfal Glades", TEAM_HORDE, RACE_UNDEAD_PLAYER, std::nullopt},
-    {"Durotar", TEAM_HORDE, RACE_ORC, std::nullopt},
-    {"Mulgore", TEAM_HORDE, RACE_TAUREN, std::nullopt},
-    {"Sunstrider Isle", TEAM_HORDE, RACE_BLOODELF, WorldLocation(530, 10349.6f, -6357.29f, 33.4026f, 5.31605f)}
+    {"Elwynn Forest", TEAM_ALLIANCE, RACE_HUMAN, 0},
+    {"Dun Morogh", TEAM_ALLIANCE, RACE_DWARF, 0},
+    {"Teldrassil", TEAM_ALLIANCE, RACE_NIGHTELF, 0},
+    {"Ammen Vale", TEAM_ALLIANCE, RACE_DRAENEI, AmmenValeZone},
+    {"Tirisfal Glades", TEAM_HORDE, RACE_UNDEAD_PLAYER, 0},
+    {"Durotar", TEAM_HORDE, RACE_ORC, 0},
+    {"Mulgore", TEAM_HORDE, RACE_TAUREN, 0},
+    {"Sunstrider Isle", TEAM_HORDE, RACE_BLOODELF, SunstriderIsleZone}
 }};
+
+bool IsOpen(Destination const& destination, Player const* player)
+{
+    return !destination.zone || AscensionAreaAccessAllows(player, OutlandMap, destination.zone);
+}
 
 SpellCastResult CheckTravel(Player const* player)
 {
@@ -48,20 +55,6 @@ SpellCastResult CheckTravel(Player const* player)
     if (player->IsInCombat())
         return SPELL_FAILED_AFFECTING_COMBAT;
     return SPELL_CAST_OK;
-}
-
-std::optional<WorldLocation> OpenStart(Destination const& destination, Player const* player)
-{
-    PlayerInfo const* info = sObjectMgr->GetPlayerInfo(destination.race, player->getClass());
-    if (!info)
-        return std::nullopt;
-
-    WorldLocation const start = destination.location ? *destination.location
-        : WorldLocation(info->mapId, info->positionX, info->positionY, info->positionZ, info->orientation);
-    if (!AscensionAreaAccessAllowsPosition(player, start.GetMapId(), start.GetPositionX(), start.GetPositionY(),
-        start.GetPositionZ()))
-        return std::nullopt;
-    return start;
 }
 
 class spell_ascension_travel_permit : public SpellScript
@@ -86,7 +79,8 @@ class spell_ascension_travel_permit : public SpellScript
             return;
         ClearGossipMenuFor(player);
         for (uint32 i = 0; i < Destinations.size(); ++i)
-            if (Destinations[i].team == player->GetTeamId() && OpenStart(Destinations[i], player))
+            if (Destinations[i].team == player->GetTeamId() && IsOpen(Destinations[i], player) &&
+                sObjectMgr->GetPlayerInfo(Destinations[i].race, player->getClass()))
                 AddGossipItemFor(player, GOSSIP_ICON_TAXI, Destinations[i].name, SenderTravelPermit, i);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, item->GetGUID());
     }
@@ -112,10 +106,10 @@ public:
         if (action >= Destinations.size() || CheckTravel(player) != SPELL_CAST_OK)
             return;
         Destination const& destination = Destinations[action];
-        if (destination.team != player->GetTeamId())
+        if (destination.team != player->GetTeamId() || !IsOpen(destination, player))
             return;
-        if (std::optional<WorldLocation> const start = OpenStart(destination, player))
-            player->TeleportTo(*start);
+        if (PlayerInfo const* start = sObjectMgr->GetPlayerInfo(destination.race, player->getClass()))
+            player->TeleportTo(start->mapId, start->positionX, start->positionY, start->positionZ, start->orientation);
     }
 };
 }

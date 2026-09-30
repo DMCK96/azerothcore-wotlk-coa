@@ -203,11 +203,6 @@ bool AscensionAreaAccessAllows(Player const* player, uint32 mapId, uint32 zoneId
     return CurrentPolicy()->IsAllowed(IsGameMaster(player), mapId, zoneId);
 }
 
-bool AscensionAreaAccessAllowsPosition(Player const* player, uint32 mapId, float x, float y, float z)
-{
-    return AscensionAreaAccessAllows(player, mapId, ZoneAt(mapId, x, y, z));
-}
-
 bool AscensionAreaAccessAllowsTaxiNode(Player const* player, uint32 nodeId)
 {
     TaxiNodesEntry const* node = sTaxiNodesStore.LookupEntry(nodeId);
