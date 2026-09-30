@@ -14,7 +14,7 @@ method = runpy.run_path(str(HERE.parent / "client_compat/run.py"))["method"]
 def main():
     source = (ROOT / "src/server/coa/AscensionTravelPermit.cpp").read_text(encoding="utf-8")
     shared = (ROOT / "src/server/shared/SharedDefines.h").read_text(encoding="utf-8")
-    code = "#include <array>\n#include <cassert>\n#include <cstdint>\n#include <set>\n#include <vector>\n"
+    code = "#include <array>\n#include <cassert>\n#include <cstdint>\n#include <vector>\n"
     code += "using uint8=std::uint8_t;using uint32=std::uint32_t;\n"
     for enum in ("TeamId", "Races", "SpellCastResult"):
         code += method(shared, "enum " + enum) + ";\n"
@@ -29,8 +29,6 @@ struct Player
     bool IsAlive()const{return alive;}bool IsInCombat()const{return combat;}TeamId GetTeamId()const{return team;}
     void TeleportTo(uint32 map,float,float,float,float){++teleports;destination=map;}
 };
-std::set<uint32> lockedZones;
-bool AscensionAreaAccessAllows(Player const*,uint32,uint32 zone){return !lockedZones.count(zone);}
 struct PlayerInfo{uint32 mapId;float positionX=1,positionY=2,positionZ=3,orientation=4;};
 struct Manager
 {
@@ -69,16 +67,6 @@ int main()
             auto before=p.teleports;select.OnGossipSelect(&p,&item,SenderTravelPermit,action);
             assert(p.teleports==before+1 && p.destination==Destinations[action].race && p.menu.empty());
         }
-        lockedZones={10141,10142};spell.OpenMenu();
-        assert(p.menu.size()==3);
-        for (uint32 action:p.menu)
-            assert(Destinations[action].race!=RACE_DRAENEI && Destinations[action].race!=RACE_BLOODELF);
-        auto lockedBefore=p.teleports;
-        for (uint32 action:actions)
-            if (Destinations[action].race==RACE_DRAENEI||Destinations[action].race==RACE_BLOODELF)
-                select.OnGossipSelect(&p,&item,SenderTravelPermit,action);
-        assert(p.teleports==lockedBefore);
-        lockedZones.clear();
         auto before=p.teleports;
         select.OnGossipSelect(&p,&item,SenderTravelPermit,team==TEAM_ALLIANCE?4:0);
         select.OnGossipSelect(&p,&item,SenderTravelPermit,99);
@@ -117,7 +105,7 @@ int main()
     assert db.execute("SELECT * FROM item_template ORDER BY entry").fetchall() == [
         (1,"keep"),(977028,"item_ascension_travel_permit")]
     assert db.execute("SELECT COUNT(*) FROM spell_script_names").fetchone() == (2,)
-    print("PASS: faction destinations, locked destinations hidden, level/combat/death gates, stale selections, missing starts and SQL bindings")
+    print("PASS: faction destinations, level/combat/death gates, stale selections, missing starts and SQL bindings")
 
 
 if __name__ == "__main__":

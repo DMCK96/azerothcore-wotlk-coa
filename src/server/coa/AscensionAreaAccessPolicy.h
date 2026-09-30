@@ -108,7 +108,7 @@ inline std::vector<Location> const& Locations()
         {"Northrend", "CrystalsongForest", {2817}, {}},
         {"Northrend", "Dalaran", {4395}, {}},
         {"Northrend", "Wintergrasp", {4197}, {}},
-        {"Northrend", "Dungeons", {}, {533, 574, 575, 576, 578, 595, 599, 600, 601, 602, 603, 604, 608, 615, 616,
+        {"Northrend", "Dungeons", {}, {535, 574, 575, 576, 578, 595, 599, 600, 601, 602, 603, 604, 608, 615, 616,
             619, 624, 631, 632, 649, 650, 658, 668, 724}},
     };
     return locations;

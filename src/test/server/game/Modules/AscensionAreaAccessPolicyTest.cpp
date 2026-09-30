@@ -449,3 +449,19 @@ TEST(AscensionAreaAccessPolicyTest, LeafOpensOneUnreleasedZone)
     EXPECT_FALSE(policy.IsAllowed(false, 1807, 0));
     EXPECT_FALSE(policy.IsAllowed(false, 940, 0));
 }
+
+TEST(AscensionAreaAccessPolicyTest, ClassicNaxxramasStaysOpenAndTheWrathCloneIsLocked)
+{
+    Policy const policy = Make();
+    EXPECT_TRUE(policy.IsAllowed(false, 533, 3456));
+    EXPECT_TRUE(policy.IsAllowed(false, 533, 0));
+    EXPECT_FALSE(policy.IsAllowed(false, 535, 3458));
+    EXPECT_FALSE(policy.IsAllowed(false, 535, 0));
+}
+
+TEST(AscensionAreaAccessPolicyTest, NorthrendDungeonsKeyOpensTheWrathNaxxramasClone)
+{
+    Policy const policy = Make({{"Coa.Access.Northrend.Dungeons", true}});
+    EXPECT_TRUE(policy.IsAllowed(false, 535, 3458));
+}
+

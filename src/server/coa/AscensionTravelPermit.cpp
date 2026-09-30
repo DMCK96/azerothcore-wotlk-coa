@@ -1,5 +1,4 @@
 /* Copyright (C) 2016+ AzerothCore, GNU AGPL v3. */
-#include "AscensionAreaAccess.h"
 #include "GossipDef.h"
 #include "Item.h"
 #include "ObjectMgr.h"
@@ -15,10 +14,7 @@ enum TravelPermit : uint32
 {
     ItemTravelPermit = 977028,
     SenderTravelPermit = 977028,
-    MaxTravelLevel = 8,
-    OutlandMap = 530,
-    AmmenValeZone = 10142,
-    SunstriderIsleZone = 10141
+    MaxTravelLevel = 8
 };
 
 struct Destination
@@ -26,25 +22,19 @@ struct Destination
     char const* name;
     TeamId team;
     uint8 race;
-    uint32 zone;
 };
 
 constexpr std::array<Destination, 8> Destinations =
 {{
-    {"Elwynn Forest", TEAM_ALLIANCE, RACE_HUMAN, 0},
-    {"Dun Morogh", TEAM_ALLIANCE, RACE_DWARF, 0},
-    {"Teldrassil", TEAM_ALLIANCE, RACE_NIGHTELF, 0},
-    {"Ammen Vale", TEAM_ALLIANCE, RACE_DRAENEI, AmmenValeZone},
-    {"Tirisfal Glades", TEAM_HORDE, RACE_UNDEAD_PLAYER, 0},
-    {"Durotar", TEAM_HORDE, RACE_ORC, 0},
-    {"Mulgore", TEAM_HORDE, RACE_TAUREN, 0},
-    {"Sunstrider Isle", TEAM_HORDE, RACE_BLOODELF, SunstriderIsleZone}
+    {"Elwynn Forest", TEAM_ALLIANCE, RACE_HUMAN},
+    {"Dun Morogh", TEAM_ALLIANCE, RACE_DWARF},
+    {"Teldrassil", TEAM_ALLIANCE, RACE_NIGHTELF},
+    {"Ammen Vale", TEAM_ALLIANCE, RACE_DRAENEI},
+    {"Tirisfal Glades", TEAM_HORDE, RACE_UNDEAD_PLAYER},
+    {"Durotar", TEAM_HORDE, RACE_ORC},
+    {"Mulgore", TEAM_HORDE, RACE_TAUREN},
+    {"Sunstrider Isle", TEAM_HORDE, RACE_BLOODELF}
 }};
-
-bool IsOpen(Destination const& destination, Player const* player)
-{
-    return !destination.zone || AscensionAreaAccessAllows(player, OutlandMap, destination.zone);
-}
 
 SpellCastResult CheckTravel(Player const* player)
 {
@@ -79,7 +69,7 @@ class spell_ascension_travel_permit : public SpellScript
             return;
         ClearGossipMenuFor(player);
         for (uint32 i = 0; i < Destinations.size(); ++i)
-            if (Destinations[i].team == player->GetTeamId() && IsOpen(Destinations[i], player) &&
+            if (Destinations[i].team == player->GetTeamId() &&
                 sObjectMgr->GetPlayerInfo(Destinations[i].race, player->getClass()))
                 AddGossipItemFor(player, GOSSIP_ICON_TAXI, Destinations[i].name, SenderTravelPermit, i);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, item->GetGUID());
@@ -106,7 +96,7 @@ public:
         if (action >= Destinations.size() || CheckTravel(player) != SPELL_CAST_OK)
             return;
         Destination const& destination = Destinations[action];
-        if (destination.team != player->GetTeamId() || !IsOpen(destination, player))
+        if (destination.team != player->GetTeamId())
             return;
         if (PlayerInfo const* start = sObjectMgr->GetPlayerInfo(destination.race, player->getClass()))
             player->TeleportTo(start->mapId, start->positionX, start->positionY, start->positionZ, start->orientation);
