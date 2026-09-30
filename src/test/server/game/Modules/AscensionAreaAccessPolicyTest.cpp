@@ -343,63 +343,63 @@ constexpr Endpoint MoakiHarbor{571, 65};
 
 TEST(AscensionAreaAccessPolicyTest, ZeppelinToWarsongHoldDoesNotSpawnUntilBoreanTundraOpens)
 {
-    EXPECT_FALSE(Make().IsTransportAllowed(Orgrimmar, WarsongHold));
-    EXPECT_TRUE(Make({{"Coa.Access.Northrend.BoreanTundra", true}}).IsTransportAllowed(Orgrimmar, WarsongHold));
+    EXPECT_FALSE(Make().IsRouteAllowed({Orgrimmar, WarsongHold}));
+    EXPECT_TRUE(Make({{"Coa.Access.Northrend.BoreanTundra", true}}).IsRouteAllowed({Orgrimmar, WarsongHold}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, BoatToValgardeFollowsHowlingFjord)
 {
-    EXPECT_FALSE(Make().IsTransportAllowed(Menethil, Valgarde));
-    EXPECT_TRUE(Make({{"Coa.Access.Northrend.HowlingFjord", true}}).IsTransportAllowed(Menethil, Valgarde));
+    EXPECT_FALSE(Make().IsRouteAllowed({Menethil, Valgarde}));
+    EXPECT_TRUE(Make({{"Coa.Access.Northrend.HowlingFjord", true}}).IsRouteAllowed({Menethil, Valgarde}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, BoatToAzuremystFollowsDraenei)
 {
-    EXPECT_FALSE(Make().IsTransportAllowed(Auberdine, AzuremystDock));
-    EXPECT_TRUE(Make({{"Coa.Access.Draenei", true}}).IsTransportAllowed(Auberdine, AzuremystDock));
+    EXPECT_FALSE(Make().IsRouteAllowed({Auberdine, AzuremystDock}));
+    EXPECT_TRUE(Make({{"Coa.Access.Draenei", true}}).IsRouteAllowed({Auberdine, AzuremystDock}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, OldWorldTransportsStillSpawn)
 {
     Policy const policy = Make();
-    EXPECT_TRUE(policy.IsTransportAllowed(GromGol, Orgrimmar));
-    EXPECT_TRUE(policy.IsTransportAllowed(Orgrimmar, ThunderBluff));
+    EXPECT_TRUE(policy.IsRouteAllowed({GromGol, Orgrimmar}));
+    EXPECT_TRUE(policy.IsRouteAllowed({Orgrimmar, ThunderBluff}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, TransportsInsideNorthrendDoNotSpawn)
 {
-    EXPECT_FALSE(Make().IsTransportAllowed(WarsongHold, MoakiHarbor));
-    EXPECT_FALSE(Make().IsTransportAllowed(IcecrownGunship, IcecrownGunship));
+    EXPECT_FALSE(Make().IsRouteAllowed({WarsongHold, MoakiHarbor}));
+    EXPECT_FALSE(Make().IsRouteAllowed({IcecrownGunship, IcecrownGunship}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, TransportInsideNorthrendSpawnsWhenBothEndsAreOpen)
 {
     Policy const policy = Make({{"Coa.Access.Northrend", true}});
-    EXPECT_TRUE(policy.IsTransportAllowed(WarsongHold, MoakiHarbor));
+    EXPECT_TRUE(policy.IsRouteAllowed({WarsongHold, MoakiHarbor}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, OneLockedEndBlocksTheTransportWhateverTheOtherEndIs)
 {
     Policy const policy = Make({{"Coa.Access.Northrend.Dragonblight", true}});
-    EXPECT_FALSE(policy.IsTransportAllowed(WarsongHold, MoakiHarbor));
-    EXPECT_FALSE(policy.IsTransportAllowed(MoakiHarbor, WarsongHold));
+    EXPECT_FALSE(policy.IsRouteAllowed({WarsongHold, MoakiHarbor}));
+    EXPECT_FALSE(policy.IsRouteAllowed({MoakiHarbor, WarsongHold}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, UnresolvedZoneOnMapFiveThirtyFollowsOutlandForTransports)
 {
-    EXPECT_FALSE(Make().IsTransportAllowed(Auberdine, {530, 0}));
-    EXPECT_TRUE(Make({{"Coa.Access.Outland", true}}).IsTransportAllowed(Auberdine, {530, 0}));
+    EXPECT_FALSE(Make().IsRouteAllowed({Auberdine, {530, 0}}));
+    EXPECT_TRUE(Make({{"Coa.Access.Outland", true}}).IsRouteAllowed({Auberdine, {530, 0}}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, UnresolvedZoneOnNorthrendMapFollowsTheRegionKeyForTransports)
 {
-    EXPECT_FALSE(Make().IsTransportAllowed(Orgrimmar, {571, 0}));
-    EXPECT_TRUE(Make({{"Coa.Access.Northrend", true}}).IsTransportAllowed(Orgrimmar, {571, 0}));
+    EXPECT_FALSE(Make().IsRouteAllowed({Orgrimmar, {571, 0}}));
+    EXPECT_TRUE(Make({{"Coa.Access.Northrend", true}}).IsRouteAllowed({Orgrimmar, {571, 0}}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, LockedOutlandZoneBlocksATransportEnd)
 {
-    EXPECT_FALSE(Make().IsTransportAllowed(Orgrimmar, {530, 3518}));
+    EXPECT_FALSE(Make().IsRouteAllowed({Orgrimmar, {530, 3518}}));
 }
 
 TEST(AscensionAreaAccessPolicyTest, UnreleasedCustomZonesAreLockedByDefault)
@@ -463,4 +463,81 @@ TEST(AscensionAreaAccessPolicyTest, NorthrendDungeonsKeyOpensTheWrathNaxxramasCl
 {
     Policy const policy = Make({{"Coa.Access.Northrend.Dungeons", true}});
     EXPECT_TRUE(policy.IsAllowed(false, 535, 3458));
+}
+
+namespace
+{
+RouteFrame Frame(uint32 map, uint32 zone, bool stop = false)
+{
+    return {{map, zone}, stop};
+}
+
+std::vector<RouteFrame> const AzuremystBoatPath = {Frame(530, 3479), Frame(530, 3479, true), Frame(530, 3479),
+    Frame(1, 148), Frame(1, 148, true), Frame(1, 148)};
+constexpr uint32 AzuremystBoat = 181646;
+constexpr uint32 Northspear = 181688;
+constexpr uint32 UnlistedTransport = 1;
+std::vector<RouteFrame> const NorthspearPath = {Frame(0, 11), Frame(0, 11, true), Frame(571, 3979),
+    Frame(571, 495, true), Frame(571, 3979)};
+}
+
+TEST(AscensionAreaAccessPolicyTest, UnlistedTransportDocksAreItsStopFramesNotItsRouteEnds)
+{
+    std::vector<Endpoint> const docks = TransportDocks(UnlistedTransport, NorthspearPath);
+    ASSERT_EQ(docks.size(), 2u);
+    EXPECT_EQ(docks[0], (Endpoint{0, 11}));
+    EXPECT_EQ(docks[1], (Endpoint{571, 495}));
+}
+
+TEST(AscensionAreaAccessPolicyTest, KnownTransportsUseTheirListedDestinationsOverTheirResolvedDocks)
+{
+    std::vector<Endpoint> const docks = TransportDocks(AzuremystBoat, AzuremystBoatPath);
+    ASSERT_EQ(docks.size(), 2u);
+    EXPECT_EQ(docks[0], (Endpoint{1, 148}));
+    EXPECT_EQ(docks[1], (Endpoint{530, 3524}));
+}
+
+TEST(AscensionAreaAccessPolicyTest, TransportDocksFallBackToTheRouteEndsWithoutStopFrames)
+{
+    std::vector<Endpoint> const docks = TransportDocks(UnlistedTransport, {Frame(0, 11), Frame(0, 12), Frame(1, 14)});
+    ASSERT_EQ(docks.size(), 2u);
+    EXPECT_EQ(docks[0], (Endpoint{0, 11}));
+    EXPECT_EQ(docks[1], (Endpoint{1, 14}));
+}
+
+TEST(AscensionAreaAccessPolicyTest, AzuremystBoatFollowsDraeneiNotTheVeiledSea)
+{
+    std::vector<Endpoint> const docks = TransportDocks(AzuremystBoat, AzuremystBoatPath);
+    EXPECT_TRUE(Make({{"Coa.Access.Draenei", true}}).IsRouteAllowed(docks));
+    EXPECT_FALSE(Make({{"Coa.Access.Outland", true}}).IsRouteAllowed(docks));
+}
+
+TEST(AscensionAreaAccessPolicyTest, NorthspearFollowsHowlingFjordNotTheFrozenSea)
+{
+    std::vector<Endpoint> const docks = TransportDocks(Northspear, NorthspearPath);
+    EXPECT_FALSE(Make().IsRouteAllowed(docks));
+    EXPECT_TRUE(Make({{"Coa.Access.Northrend.HowlingFjord", true}}).IsRouteAllowed(docks));
+}
+
+TEST(AscensionAreaAccessPolicyTest, FlightBetweenOpenStopsThroughALockedZoneIsRefused)
+{
+    std::vector<Endpoint> const telaarToShattrath = {{530, Nagrand}, {530, 3519}, {530, 3703}};
+    Policy const stopsOpen = Make({{"Coa.Access.Outland.Nagrand", true}, {"Coa.Access.Outland.ShattrathCity", true}});
+    EXPECT_FALSE(stopsOpen.IsRouteAllowed(telaarToShattrath));
+    EXPECT_TRUE(stopsOpen.IsRouteAllowed({{530, Nagrand}, {530, 3703}}));
+    Policy const allOpen = Make({{"Coa.Access.Outland.Nagrand", true}, {"Coa.Access.Outland.ShattrathCity", true},
+        {"Coa.Access.Outland.TerokkarForest", true}});
+    EXPECT_TRUE(allOpen.IsRouteAllowed(telaarToShattrath));
+}
+
+TEST(AscensionAreaAccessPolicyTest, EveryListedTransportDestinationIsInAKeyedOrOldWorldZone)
+{
+    Policy const allOpen = Make({{"Coa.Access.Outland", true}, {"Coa.Access.BloodElf", true},
+        {"Coa.Access.Draenei", true}, {"Coa.Access.Northrend", true}, {"Coa.Access.Unreleased", true}});
+    Policy const allLocked = Make();
+    for (auto const& [entry, destinations] : TransportDestinations())
+    {
+        EXPECT_TRUE(allOpen.IsRouteAllowed(destinations)) << entry;
+        EXPECT_FALSE(allLocked.IsRouteAllowed(destinations)) << entry;
+    }
 }

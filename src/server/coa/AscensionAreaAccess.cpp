@@ -1,6 +1,5 @@
 /* Copyright (C) 2016+ AzerothCore, GNU AGPL v3. */
 
-#include "AscensionAreaAccess.h"
 #include "AscensionAreaAccessPolicy.h"
 #include "Chat.h"
 #include "Config.h"
@@ -13,6 +12,7 @@
 #include "ScriptMgr.h"
 #include "TransportMgr.h"
 #include "WorldSession.h"
+#include <sstream>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -34,8 +34,8 @@ thread_local bool evicting = false;
 
 AreaAccess::Throttle messageThrottle(std::chrono::seconds(30));
 
-std::mutex taxiZonesLock;
-std::unordered_map<uint32, uint32> taxiZones;
+std::mutex taxiPathsLock;
+std::unordered_map<uint32, std::vector<AreaAccess::Endpoint>> taxiPaths;
 
 bool IsGameMaster(Player const* player)
 {
@@ -54,12 +54,18 @@ uint32 ZoneAt(uint32 mapId, float x, float y, float z)
     return sMapMgr->GetZoneId(PHASEMASK_NORMAL, mapId, x, y, z);
 }
 
-uint32 TaxiNodeZone(TaxiNodesEntry const* node)
+std::vector<AreaAccess::Endpoint> const& TaxiPathPoints(uint32 pathId)
 {
-    std::lock_guard<std::mutex> guard(taxiZonesLock);
-    auto it = taxiZones.find(node->ID);
-    if (it == taxiZones.end())
-        it = taxiZones.emplace(node->ID, ZoneAt(node->map_id, node->x, node->y, node->z)).first;
+    std::lock_guard<std::mutex> guard(taxiPathsLock);
+    auto it = taxiPaths.find(pathId);
+    if (it == taxiPaths.end())
+    {
+        std::vector<AreaAccess::Endpoint> points;
+        if (pathId < sTaxiPathNodesByPath.size())
+            for (TaxiPathNodeEntry const* node : sTaxiPathNodesByPath[pathId])
+                points.push_back({node->mapid, ZoneAt(node->mapid, node->x, node->y, node->z)});
+        it = taxiPaths.emplace(pathId, std::move(points)).first;
+    }
     return it->second;
 }
 
@@ -86,10 +92,43 @@ PolicyPointer CurrentPolicy()
     return current;
 }
 
-AreaAccess::Endpoint TransportEnd(KeyFrame const& frame)
+bool IsTaxiRouteAllowed(Player const* player, std::vector<uint32> const& nodes)
 {
-    TaxiPathNodeEntry const* node = frame.Node;
-    return {node->mapid, ZoneAt(node->mapid, node->x, node->y, node->z)};
+    if (IsGameMaster(player))
+        return true;
+
+    std::vector<AreaAccess::Endpoint> points;
+    for (uint32 nodeId : nodes)
+        if (TaxiNodesEntry const* node = sTaxiNodesStore.LookupEntry(nodeId))
+            points.push_back({node->map_id, ZoneAt(node->map_id, node->x, node->y, node->z)});
+    for (std::size_t i = 1; i < nodes.size(); ++i)
+    {
+        uint32 pathId = 0;
+        uint32 cost = 0;
+        sObjectMgr->GetTaxiPath(nodes[i - 1], nodes[i], pathId, cost);
+        std::vector<AreaAccess::Endpoint> const& path = TaxiPathPoints(pathId);
+        points.insert(points.end(), path.begin(), path.end());
+    }
+    return CurrentPolicy()->IsRouteAllowed(points);
+}
+
+std::vector<AreaAccess::Endpoint> TransportDocks(TransportTemplate const& transport)
+{
+    std::vector<AreaAccess::RouteFrame> frames;
+    for (KeyFrame const& frame : transport.keyFrames)
+    {
+        TaxiPathNodeEntry const* node = frame.Node;
+        frames.push_back({{node->mapid, ZoneAt(node->mapid, node->x, node->y, node->z)}, frame.IsStopFrame()});
+    }
+    return AreaAccess::TransportDocks(transport.entry, frames);
+}
+
+std::string Describe(std::vector<AreaAccess::Endpoint> const& points)
+{
+    std::ostringstream text;
+    for (std::size_t i = 0; i < points.size(); ++i)
+        text << (i ? ", " : "") << "map " << points[i].mapId << " zone " << points[i].zoneId;
+    return text.str();
 }
 
 void ResetLockedBind(Player* player)
@@ -154,15 +193,12 @@ public:
 
     bool OnCanSpawnContinentTransport(TransportTemplate const& transport) override
     {
-        if (transport.keyFrames.empty())
+        std::vector<AreaAccess::Endpoint> const docks = TransportDocks(transport);
+        if (CurrentPolicy()->IsRouteAllowed(docks))
             return true;
 
-        if (CurrentPolicy()->IsTransportAllowed(TransportEnd(transport.keyFrames.front()),
-            TransportEnd(transport.keyFrames.back())))
-            return true;
-
-        LOG_INFO("server.loading", "Area access: transport {} not spawned, its route ends in a locked area",
-            transport.entry);
+        LOG_INFO("server.loading", "Area access: transport {} not spawned, a dock is in a locked area ({})",
+            transport.entry, Describe(docks));
         return false;
     }
 };
@@ -203,16 +239,11 @@ public:
 
     bool OnPlayerBeforeActivateTaxiPath(Player* player, std::vector<uint32> const& nodes) override
     {
-        if (IsGameMaster(player))
+        if (IsTaxiRouteAllowed(player, nodes))
             return true;
 
-        for (uint32 nodeId : nodes)
-            if (!AscensionAreaAccessAllowsTaxiNode(player, nodeId))
-            {
-                Deny(player);
-                return false;
-            }
-        return true;
+        Deny(player);
+        return false;
     }
 
     void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32) override
@@ -225,17 +256,6 @@ public:
         player->m_Events.AddEventAtOffset([guid]() { Evict(guid); }, Milliseconds(1));
     }
 };
-}
-
-bool AscensionAreaAccessAllows(Player const* player, uint32 mapId, uint32 zoneId)
-{
-    return CurrentPolicy()->IsAllowed(IsGameMaster(player), mapId, zoneId);
-}
-
-bool AscensionAreaAccessAllowsTaxiNode(Player const* player, uint32 nodeId)
-{
-    TaxiNodesEntry const* node = sTaxiNodesStore.LookupEntry(nodeId);
-    return !node || AscensionAreaAccessAllows(player, node->map_id, TaxiNodeZone(node));
 }
 
 void AddSC_AscensionAreaAccess()

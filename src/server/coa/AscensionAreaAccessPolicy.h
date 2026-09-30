@@ -53,6 +53,49 @@ struct Endpoint
     uint32 zoneId;
 };
 
+constexpr bool operator==(Endpoint const& left, Endpoint const& right)
+{
+    return left.mapId == right.mapId && left.zoneId == right.zoneId;
+}
+
+struct RouteFrame
+{
+    Endpoint where;
+    bool stop;
+};
+
+inline std::unordered_map<uint32, std::vector<Endpoint>> const& TransportDestinations()
+{
+    static std::unordered_map<uint32, std::vector<Endpoint>> const destinations = {
+        {181646, {{1, 148}, {530, 3524}}},
+        {181688, {{0, 11}, {571, 495}}},
+        {181689, {{571, 495}, {0, 85}}},
+        {186238, {{571, 3537}, {1, 14}}},
+        {186371, {{571, 495}}},
+        {187038, {{571, 495}}},
+        {187568, {{571, 65}, {571, 3537}}},
+        {188511, {{571, 65}, {571, 495}}},
+        {190536, {{0, 1519}, {571, 3537}}},
+        {192241, {{571, 210}}},
+        {192242, {{571, 210}}},
+    };
+    return destinations;
+}
+
+inline std::vector<Endpoint> TransportDocks(uint32 entry, std::vector<RouteFrame> const& frames)
+{
+    if (auto listed = TransportDestinations().find(entry); listed != TransportDestinations().end())
+        return listed->second;
+
+    std::vector<Endpoint> docks;
+    for (RouteFrame const& frame : frames)
+        if (frame.stop)
+            docks.push_back(frame.where);
+    if (docks.empty() && !frames.empty())
+        docks = {frames.front().where, frames.back().where};
+    return docks;
+}
+
 struct Teleport
 {
     bool isGm;
@@ -187,17 +230,13 @@ public:
         return IsAllowed(false, teleport.toMap, teleport.toZone);
     }
 
-    bool IsTransportAllowed(Endpoint const& first, Endpoint const& last) const
+    bool IsRouteAllowed(std::vector<Endpoint> const& points) const
     {
-        return IsEndAllowed(first) && IsEndAllowed(last);
+        return std::all_of(points.begin(), points.end(),
+            [this](Endpoint const& point) { return IsAllowed(false, point.mapId, point.zoneId); });
     }
 
 private:
-    bool IsEndAllowed(Endpoint const& end) const
-    {
-        return IsAllowed(false, end.mapId, end.zoneId);
-    }
-
     std::unordered_map<uint32, bool> _zones;
     std::unordered_map<uint32, bool> _maps;
     bool _northrend = false;
