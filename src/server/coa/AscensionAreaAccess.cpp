@@ -25,6 +25,8 @@ namespace
 using PolicyPointer = std::shared_ptr<AreaAccess::Policy const>;
 
 constexpr char const* LockedMessage = "This area is currently inaccessible.";
+constexpr char const* BindResetMessage =
+    "Your hearthstone was bound to an area that is no longer accessible. It is now bound to your starting area.";
 
 PolicyPointer policy;
 
@@ -90,6 +92,27 @@ AreaAccess::Endpoint TransportEnd(KeyFrame const& frame)
     return {node->mapid, ZoneAt(node->mapid, node->x, node->y, node->z)};
 }
 
+void ResetLockedBind(Player* player)
+{
+    if (IsGameMaster(player))
+        return;
+
+    AreaTableEntry const* bindArea = sAreaTableStore.LookupEntry(player->m_homebindAreaId);
+    uint32 const bindZone = !bindArea ? ZoneAt(player->m_homebindMapId, player->m_homebindX, player->m_homebindY,
+        player->m_homebindZ) : (bindArea->zone ? bindArea->zone : bindArea->ID);
+    PolicyPointer const current = CurrentPolicy();
+    if (current->IsAllowed(false, player->m_homebindMapId, bindZone))
+        return;
+
+    WorldLocation const start = player->GetStartPosition();
+    if (!current->IsAllowed(false, start.GetMapId(), ZoneAt(start.GetMapId(), start.GetPositionX(),
+        start.GetPositionY(), start.GetPositionZ())))
+        return;
+
+    player->SetHomebind(start, sMapMgr->GetAreaId(PHASEMASK_NORMAL, start));
+    ChatHandler(player->GetSession()).SendSysMessage(BindResetMessage);
+}
+
 void Evict(ObjectGuid guid)
 {
     Player* player = ObjectAccessor::FindPlayer(guid);
@@ -149,7 +172,7 @@ class Enforcement : public PlayerScript
 public:
     Enforcement() : PlayerScript("AscensionAreaAccessEnforcement", { PLAYERHOOK_ON_CAN_TELEPORT_TO,
         PLAYERHOOK_ON_UPDATE_ZONE, PLAYERHOOK_ON_BEFORE_ACTIVATE_TAXI_PATH,
-        PLAYERHOOK_ON_LOGOUT }) { }
+        PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT }) { }
 
     bool OnPlayerCanTeleportTo(Player* player, uint32 mapId, float x, float y, float z, uint32 options) override
     {
@@ -166,6 +189,11 @@ public:
 
         Deny(player);
         return false;
+    }
+
+    void OnPlayerLogin(Player* player) override
+    {
+        ResetLockedBind(player);
     }
 
     void OnPlayerLogout(Player* player) override
@@ -189,6 +217,7 @@ public:
 
     void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32) override
     {
+        ResetLockedBind(player);
         if (IsGameMaster(player) || CurrentPolicy()->IsAllowed(false, player->GetMapId(), newZone))
             return;
 
