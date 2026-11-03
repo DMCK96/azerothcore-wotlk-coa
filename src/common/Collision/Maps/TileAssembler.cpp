@@ -21,6 +21,7 @@
 #include "MapTree.h"
 #include "VMapDefinitions.h"
 #include <boost/filesystem.hpp>
+#include <algorithm>
 #include <iomanip>
 #include <set>
 #include <sstream>
@@ -216,6 +217,43 @@ namespace VMAP
         return success;
     }
 
+    // ADT files list a WMO only in some of the tiles its bounds cover, and mmaps are built from a tile's own spawns.
+    static uint32 AddOverlappedTiles(MapSpawns& spawns)
+    {
+        constexpr float tileSize = 533.33333f;
+        uint32 added = 0;
+        for (UniqueEntryMap::value_type const& entry : spawns.UniqueEntries)
+        {
+            ModelSpawn const& spawn = entry.second;
+            if ((spawn.flags & MOD_WORLDSPAWN) || !(spawn.flags & MOD_HAS_BOUND))
+                continue;
+
+            G3D::Vector3 const low = spawn.iBound.low();
+            G3D::Vector3 const high = spawn.iBound.high();
+            int32 const firstX = std::clamp(int32(low.y / tileSize), 0, 63);
+            int32 const lastX = std::clamp(int32(high.y / tileSize), 0, 63);
+            int32 const firstY = std::clamp(int32(low.x / tileSize), 0, 63);
+            int32 const lastY = std::clamp(int32(high.x / tileSize), 0, 63);
+            for (int32 tileX = firstX; tileX <= lastX; ++tileX)
+            {
+                for (int32 tileY = firstY; tileY <= lastY; ++tileY)
+                {
+                    uint32 const tileId = StaticMapTree::packTileID(tileX, tileY);
+                    TileMap::const_iterator listed = spawns.TileEntries.lower_bound(tileId);
+                    bool found = false;
+                    for (; listed != spawns.TileEntries.end() && listed->first == tileId && !found; ++listed)
+                        found = listed->second == spawn.ID;
+                    if (!found)
+                    {
+                        spawns.TileEntries.insert(pair<uint32, uint32>(tileId, spawn.ID));
+                        ++added;
+                    }
+                }
+            }
+        }
+        return added;
+    }
+
     bool TileAssembler::readMapSpawns()
     {
         std::string fname = iSrcDir + "/dir_bin";
@@ -261,6 +299,11 @@ namespace VMAP
         }
         bool success = (ferror(dirf) == 0);
         fclose(dirf);
+
+        uint32 addedTiles = 0;
+        for (MapData::value_type const& map : mapData)
+            addedTiles += AddOverlappedTiles(*map.second);
+        printf("Added %u WMO tile entries for tiles covered by their bounds\n", addedTiles);
         return success;
     }
 
